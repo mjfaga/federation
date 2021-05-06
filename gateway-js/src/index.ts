@@ -1,6 +1,5 @@
 import {
   GraphQLService,
-  SchemaChangeCallback,
   Unsubscriber,
 } from 'apollo-server-core';
 import {
@@ -171,7 +170,7 @@ export class ApolloGateway implements GraphQLService {
   private logger: Logger;
   private queryPlanStore: InMemoryLRUCache<QueryPlan>;
   private apolloConfig?: ApolloConfigFromAS3;
-  private onSchemaChangeListeners = new Set<SchemaChangeCallback>();
+  private onSchemaChangeListeners = new Set<(schema: GraphQLSchema, supergraphSdl: string) => void>();
   private serviceDefinitions: ServiceDefinition[] = [];
   private compositionMetadata?: CompositionMetadata;
   private serviceSdlCache = new Map<string, string>();
@@ -428,7 +427,7 @@ export class ApolloGateway implements GraphQLService {
 
     // TODO(trevor): #580 redundant parse
     this.parsedSupergraphSdl = parse(supergraphSdl);
-    this.updateWithSchemaAndNotify(schema);
+    this.updateWithSchemaAndNotify(schema, supergraphSdl);
     this.state = { phase: 'loaded' };
   }
 
@@ -505,7 +504,7 @@ export class ApolloGateway implements GraphQLService {
         "A valid schema couldn't be composed. Falling back to previous schema.",
       );
     } else {
-      this.updateWithSchemaAndNotify(schema);
+      this.updateWithSchemaAndNotify(schema, supergraphSdl);
 
       if (this.experimental_didUpdateComposition) {
         this.experimental_didUpdateComposition(
@@ -564,7 +563,7 @@ export class ApolloGateway implements GraphQLService {
         "A valid schema couldn't be composed. Falling back to previous schema.",
       );
     } else {
-      this.updateWithSchemaAndNotify(schema);
+      this.updateWithSchemaAndNotify(schema, supergraphSdl);
 
       if (this.experimental_didUpdateComposition) {
         this.experimental_didUpdateComposition(
@@ -585,14 +584,14 @@ export class ApolloGateway implements GraphQLService {
     }
   }
 
-  private updateWithSchemaAndNotify(schema: GraphQLSchema): void {
+  private updateWithSchemaAndNotify(schema: GraphQLSchema, supergraphSdl: string): void {
     this.schema = schema;
     this.queryPlanner = new QueryPlanner(schema);
 
     // Notify the schema listeners of the updated schema
     try {
       this.onSchemaChangeListeners.forEach((listener) =>
-          listener(schema),
+          listener(schema, supergraphSdl),
       );
     } catch (e) {
       this.logger.error(
@@ -740,7 +739,7 @@ export class ApolloGateway implements GraphQLService {
     };
   }
 
-  public onSchemaChange(callback: SchemaChangeCallback): Unsubscriber {
+  public onSchemaChange(callback: (schema: GraphQLSchema, supergraphSdl: string) => void): Unsubscriber {
     this.onSchemaChangeListeners.add(callback);
 
     return () => {
